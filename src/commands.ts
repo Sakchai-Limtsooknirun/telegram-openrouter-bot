@@ -8,6 +8,7 @@ import {
 } from "./telegram";
 import { getKeyInfo, listModels, searchModels, type ModelInfo } from "./openrouter";
 import {
+  clearHistory,
   getModelCache,
   getPendingSearch,
   getSelectedModel,
@@ -24,6 +25,7 @@ const HELP = [
   "/credits — remaining OpenRouter quota for this key",
   "/model — pick a model",
   "/cancel — cancel a pending search",
+  "/reset — clear conversation context",
   "",
   "Any other message is sent to the selected model.",
 ].join("\n");
@@ -142,6 +144,10 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
       case "/cancel":
         await setPendingSearch(env, chatId, false);
         await sendMessage(env, chatId, "Cancelled.");
+        return;
+      case "/reset":
+        await clearHistory(env, chatId);
+        await sendMessage(env, chatId, "Context cleared.");
         return;
       default:
         await sendMessage(env, chatId, `Unknown command. Try /help`);

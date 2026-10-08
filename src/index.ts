@@ -1,11 +1,12 @@
 import { chunkHtml, editMessageText, sendMessage, type Env, type TgUpdate } from "./telegram";
 import { streamChat, type ChatMessage } from "./openrouter";
-import { getSelectedModel } from "./state";
+import { appendHistory, getHistory, getSelectedModel } from "./state";
 import { toTelegramHtml } from "./format";
 import { handleUpdate } from "./commands";
 
 const MAX_TOKENS = 1024;
 const EDIT_EVERY = 12;
+const SYSTEM_PROMPT = "You are a helpful assistant. Before answering, briefly plan your approach internally, then give a clear, well-structured answer. Use fenced code blocks with a language tag for any code.";
 
 export async function runChat(env: Env, chatId: number, text: string): Promise<void> {
   const placeholder = await sendMessage(env, chatId, "⏳");
@@ -31,7 +32,12 @@ export async function runChat(env: Env, chatId: number, text: string): Promise<v
 
   try {
     const model = await getSelectedModel(env, chatId);
-    const messages: ChatMessage[] = [{ role: "user", content: text }];
+    const history = await getHistory(env, chatId);
+    const messages: ChatMessage[] = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...history,
+      { role: "user", content: text },
+    ];
     const body = await streamChat(env, { model, messages, max_tokens: MAX_TOKENS });
 
     const reader = body.getReader();
@@ -70,6 +76,10 @@ export async function runChat(env: Env, chatId: number, text: string): Promise<v
     }
 
     await flush(toTelegramHtml(acc || "(empty response)"));
+    await appendHistory(env, chatId, [
+      { role: "user", content: text },
+      { role: "assistant", content: acc },
+    ]);
   } catch (err) {
     const message = `⚠️ ${String(err)}`;
     if (messageId !== undefined) {

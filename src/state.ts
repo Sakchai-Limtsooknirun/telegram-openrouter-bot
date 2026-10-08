@@ -1,7 +1,8 @@
 import type { Env } from "./telegram";
-import type { ModelInfo } from "./openrouter";
+import type { ChatMessage, ModelInfo } from "./openrouter";
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const HISTORY_LIMIT = 12;
 
 interface ModelCache {
   at: number;
@@ -44,4 +45,29 @@ export async function setPendingSearch(env: Env, chatId: number, on: boolean): P
   } else {
     await env.BOT_KV.delete(`search:${chatId}`);
   }
+}
+
+export async function getHistory(env: Env, chatId: number): Promise<ChatMessage[]> {
+  const raw = await env.BOT_KV.get(`hist:${chatId}`);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as ChatMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function appendHistory(
+  env: Env,
+  chatId: number,
+  msgs: ChatMessage[],
+): Promise<void> {
+  const history = await getHistory(env, chatId);
+  const next = history.concat(msgs).slice(-HISTORY_LIMIT);
+  await env.BOT_KV.put(`hist:${chatId}`, JSON.stringify(next));
+}
+
+export async function clearHistory(env: Env, chatId: number): Promise<void> {
+  await env.BOT_KV.delete(`hist:${chatId}`);
 }

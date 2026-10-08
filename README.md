@@ -12,6 +12,14 @@ Features:
 
 ---
 
+## Conversation context
+
+The bot remembers the last 12 messages per chat in KV under `hist:<chatId>`.
+Use `/reset` to clear the conversation context. Context is per-chat and is
+never shared between chats.
+
+---
+
 ## 1. What you need
 
 | Thing | Where to get it |
@@ -184,4 +192,3 @@ http://localhost:8787`) and the webhook must point at the tunnel URL, not at
 - `ctx.waitUntil` keeps the Worker alive for roughly **30 seconds** after the
   `200` response. That is why `max_tokens` defaults to **1024** with a hard cap
   of **2048**.
-- Conversation history is not kept: every message is answered statelessly.
