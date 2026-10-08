@@ -8,3 +8,7 @@ DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 [[kv_namespaces]]
 binding = "BOT_KV"
 id = "7b5c53c1a2d448a582f9d51fb02a7f42"
+
+[observability.logs]
+enabled = false
+invocation_logs = true
