@@ -3,8 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 [vars]
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
 
 [[kv_namespaces]]
 binding = "BOT_KV"
-id = "00000000000000000000000000000000"
+id = "7b5c53c1a2d448a582f9d51fb02a7f42"
