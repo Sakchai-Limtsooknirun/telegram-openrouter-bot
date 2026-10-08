@@ -3,7 +3,16 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
   OPENROUTER_API_KEY: string;
   DEFAULT_MODEL: string;
+  IMAGE_MODEL?: string;
   BOT_KV: KVNamespace;
+}
+
+export interface TgPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
 }
 
 export interface TgChat {
@@ -14,6 +23,15 @@ export interface TgMessage {
   message_id: number;
   chat: TgChat;
   text?: string;
+  caption?: string;
+  photo?: TgPhotoSize[];
+  document?: unknown;
+  video?: unknown;
+  audio?: unknown;
+  voice?: unknown;
+  animation?: unknown;
+  video_note?: unknown;
+  sticker?: unknown;
 }
 
 export interface TgCallbackQuery {
@@ -41,6 +59,65 @@ export interface TgResponse<T = unknown> {
   result?: T;
   description?: string;
   error_code?: number;
+}
+
+interface TgFile {
+  file_id: string;
+  file_unique_id: string;
+  file_size?: number;
+  file_path?: string;
+}
+
+const TELEGRAM_FILE_LIMIT = 10 * 1024 * 1024;
+
+export async function downloadPhoto(env: Env, fileId: string): Promise<Uint8Array> {
+  const fileResponse = await tg<TgFile>(env, "getFile", { file_id: fileId });
+  const file = fileResponse.result;
+  if (!fileResponse.ok || !file?.file_path) {
+    throw new Error(`Telegram getFile failed: ${fileResponse.description ?? "file path missing"}`);
+  }
+  if (!/^[\w./-]+$/.test(file.file_path) || file.file_path.split("/").includes("..")) {
+    throw new Error("Telegram returned an invalid file path.");
+  }
+  if (file.file_size !== undefined && file.file_size > TELEGRAM_FILE_LIMIT) {
+    throw new Error("Image is too large (maximum 10 MB).");
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`,
+  );
+  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Telegram file download returned no body.");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > TELEGRAM_FILE_LIMIT) {
+      await reader.cancel();
+      throw new Error("Image is too large (maximum 10 MB).");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 24 * 1024;
+  let encoded = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+    encoded += btoa(String.fromCharCode(...chunk));
+  }
+  return encoded;
 }
 
 export async function tg<T = unknown>(

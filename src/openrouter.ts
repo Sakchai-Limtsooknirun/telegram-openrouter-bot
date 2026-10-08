@@ -16,9 +16,52 @@ export interface ModelInfo {
   pricing: { prompt: string; completion: string };
 }
 
+export type ChatContent =
+  | string
+  | Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail?: "auto" | "low" | "high" } }
+    >;
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: ChatContent;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
+}
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ServerTool {
+  type: "openrouter:web_search";
+  parameters: {
+    engine: "exa";
+    mode: "auto";
+    max_uses: number;
+    max_results: number;
+    search_context_size?: "low" | "medium" | "high";
+  };
+}
+
+export interface ChatCompletionOptions {
+  model: string;
+  messages: ChatMessage[];
+  max_tokens: number;
+  tools?: Array<ToolDefinition | ServerTool>;
+  stream?: boolean;
 }
 
 export async function getKeyInfo(env: Env): Promise<KeyInfo> {
@@ -61,7 +104,7 @@ export function searchModels(models: ModelInfo[], q: string): ModelInfo[] {
 
 export async function streamChat(
   env: Env,
-  opts: { model: string; messages: ChatMessage[]; max_tokens: number },
+  opts: ChatCompletionOptions,
 ): Promise<ReadableStream<Uint8Array>> {
   const res = await fetch(`${BASE}/chat/completions`, {
     method: "POST",
@@ -73,7 +116,8 @@ export async function streamChat(
       model: opts.model,
       messages: opts.messages,
       max_tokens: opts.max_tokens,
-      stream: true,
+      ...(opts.tools ? { tools: opts.tools } : {}),
+      stream: opts.stream ?? true,
     }),
   });
   if (!res.ok || !res.body) {

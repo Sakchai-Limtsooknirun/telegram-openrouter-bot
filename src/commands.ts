@@ -1,5 +1,7 @@
 import {
   answerCallbackQuery,
+  bytesToBase64,
+  downloadPhoto,
   editMessageText,
   sendMessage,
   type Env,
@@ -27,7 +29,9 @@ const HELP = [
   "/cancel — cancel a pending search",
   "/reset — clear conversation context",
   "",
-  "Any other message is sent to the selected model.",
+  "Ask naturally to calculate or convert units, check quota/model status, read a public webpage, or manage your tasks, notes, and date-based reminders.",
+  "Current facts may use web search; source links are included. Photos are analyzed with the configured image model. Other media types are not supported.",
+  "Reminders are delivered together once daily at 10:00 Asia/Bangkok.",
 ].join("\n");
 
 function usd(n: number): string {
@@ -124,9 +128,35 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
   }
 
   const message = update.message;
-  const text = message?.text;
-  if (!message || !text) return;
+  if (!message) return;
   const chatId = message.chat.id;
+  const text = message.text ?? "";
+
+  if (message.photo?.length) {
+    const photo = message.photo.slice().sort((a, b) => b.width * b.height - a.width * a.height)[0];
+    if (photo.file_size !== undefined && photo.file_size > 10 * 1024 * 1024) {
+      await sendMessage(env, chatId, "Image is too large (maximum 10 MB).");
+      return;
+    }
+    try {
+      const bytes = await downloadPhoto(env, photo.file_id);
+      await runChat(
+        env,
+        chatId,
+        message.caption ?? "",
+        `data:image/jpeg;base64,${bytesToBase64(bytes)}`,
+      );
+    } catch (error) {
+      await sendMessage(env, chatId, `Could not process image: ${String(error)}`);
+    }
+    return;
+  }
+
+  if (message.document || message.video || message.audio || message.voice || message.animation || message.video_note || message.sticker) {
+    await sendMessage(env, chatId, "Only Telegram photos are supported; audio, video, documents, and stickers cannot be processed.");
+    return;
+  }
+  if (!text) return;
 
   if (text.startsWith("/")) {
     const command = text.split(/\s+/)[0].split("@")[0];

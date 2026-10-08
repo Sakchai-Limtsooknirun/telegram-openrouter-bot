@@ -4,6 +4,10 @@ compatibility_date = "2025-01-01"
 
 [vars]
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
+IMAGE_MODEL = "google/gemma-4-26b-a4b-it:free"
+
+[triggers]
+crons = ["0 3 * * *"]
 
 [[kv_namespaces]]
 binding = "BOT_KV"

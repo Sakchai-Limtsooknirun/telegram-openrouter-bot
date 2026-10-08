@@ -7,8 +7,11 @@ Features:
 
 - `/credits` — remaining quota for your OpenRouter API key
 - `/model` — pick a model from an inline keyboard, or search by partial name
+- `/reset` — clear conversation context (saved tasks, notes, and reminders remain)
 - Code in replies is rendered as Telegram `<pre><code>` blocks
 - Long replies are split into multiple messages automatically
+- Photos are analyzed by `google/gemma-4-26b-a4b-it:free` by default
+- Ask the bot to calculate, convert units, check OpenRouter information, read webpages, or manage chat-local tasks, notes, and reminders
 
 ---
 
@@ -17,6 +20,36 @@ Features:
 The bot remembers the last 12 messages per chat in KV under `hist:<chatId>`.
 Use `/reset` to clear the conversation context. Context is per-chat and is
 never shared between chats.
+
+## Agent tools and media
+
+Use natural language, for example: “Convert 12 miles to kilometers”, “Add a task
+to renew my passport”, “Save a note that the staging URL is …”, or “Remind me
+about the appointment on 2026-10-20”. Tasks, notes, and one-time date-based
+reminders are stored separately in KV and isolated by Telegram chat. Reminders
+are grouped into at most one digest per chat each day at **10:00 Asia/Bangkok**
+(03:00 UTC); due and overdue reminders include their date. The bot does not
+promise delivery at an exact hour within the reminder date. `/reset` only clears
+conversation history.
+
+For current facts, the model can use OpenRouter's `openrouter:web_search` server
+tool with Exa Auto, limited to one search and three results per user message.
+Search results are cited with source URLs. Each search costs approximately
+**$0.007**, in addition to model-token usage.
+
+Send a Telegram photo, with or without a caption, for image understanding. The
+bot downloads the highest-resolution photo up to **10 MB** and uses
+`IMAGE_MODEL` (default `google/gemma-4-26b-a4b-it:free`); its response names the
+model used. Configure another compatible model in `wrangler.toml` under
+`[vars]`. Text messages continue to use the selected `/model`. Audio, video,
+documents, and stickers are not processed.
+
+The agent tools expose only built-in calculations/conversions, OpenRouter
+quota/model/status lookups, bounded public HTTPS page reading, and per-chat
+task/note/reminder operations. Page reads reject private/local hosts and unsafe
+redirects, have a short timeout, and are limited to 48 KB of response data.
+There is no shell or arbitrary tool execution. Local tools are limited to three
+executions per user message.
 
 ---
 
