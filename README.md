@@ -32,22 +32,14 @@ defaults to `openrouter`. Switching providers clears the selected model
 | Provider | Base URL | Key secret | Default model |
 | --- | --- | --- | --- |
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `DEFAULT_MODEL` from `wrangler.toml` |
-| `openai` | `https://api.openai.com/v1` | `PROVIDER_OPENAI_KEY` | `gpt-4o-mini` |
-| `groq` | `https://api.groq.com/openai/v1` | `PROVIDER_GROQ_KEY` | `llama-3.3-70b-versatile` |
-| `deepseek` | `https://api.deepseek.com/v1` | `PROVIDER_DEEPSEEK_KEY` | `deepseek-chat` |
-| `together` | `https://api.together.xyz/v1` | `PROVIDER_TOGETHER_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
-| `mistral` | `https://api.mistral.ai/v1` | `PROVIDER_MISTRAL_KEY` | `mistral-small-latest` |
+| `9arm` | `https://api.tokenme.limited/api/v1` | `PROVIDER_9ARM_KEY` | `deepseek-ai/deepseek-v4-flash-0731` |
 
-All of these speak the OpenAI-compatible chat-completions API, so streaming and
-function calling are reused as-is. Set only the keys you need; a provider whose
-key is missing is still listed but marked `(no key)`.
+Both speak the OpenAI-compatible chat-completions API, so streaming and
+function calling are reused as-is. A provider whose key is missing is still
+listed but marked `(no key)`.
 
 ```bash
-npx wrangler secret put PROVIDER_OPENAI_KEY
-npx wrangler secret put PROVIDER_GROQ_KEY
-npx wrangler secret put PROVIDER_DEEPSEEK_KEY
-npx wrangler secret put PROVIDER_TOGETHER_KEY
-npx wrangler secret put PROVIDER_MISTRAL_KEY
+npx wrangler secret put PROVIDER_9ARM_KEY
 ```
 
 `/model` lists models from the currently selected provider's `/models` endpoint
