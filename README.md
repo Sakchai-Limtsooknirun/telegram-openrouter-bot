@@ -6,6 +6,7 @@ Cloudflare Workers (free plan), and shows your remaining per-key quota.
 Features:
 
 - `/credits` — remaining quota for your OpenRouter API key
+- `/provider` — switch the AI provider for this chat
 - `/model` — pick a model from an inline keyboard, or search by partial name
 - `/reset` — clear conversation context (saved tasks, notes, and reminders remain)
 - Code in replies is rendered as Telegram `<pre><code>` blocks
@@ -20,6 +21,42 @@ Features:
 The bot remembers the last 12 messages per chat in KV under `hist:<chatId>`.
 Use `/reset` to clear the conversation context. Context is per-chat and is
 never shared between chats.
+
+## Providers
+
+`/provider` shows an inline keyboard of the supported providers and marks the
+current one. The choice is stored per chat in KV under `provider:<chatId>` and
+defaults to `openrouter`. Switching providers clears the selected model
+(`model:<chatId>`), so the chat falls back to that provider's default model.
+
+| Provider | Base URL | Key secret | Default model |
+| --- | --- | --- | --- |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `DEFAULT_MODEL` from `wrangler.toml` |
+| `openai` | `https://api.openai.com/v1` | `PROVIDER_OPENAI_KEY` | `gpt-4o-mini` |
+| `groq` | `https://api.groq.com/openai/v1` | `PROVIDER_GROQ_KEY` | `llama-3.3-70b-versatile` |
+| `deepseek` | `https://api.deepseek.com/v1` | `PROVIDER_DEEPSEEK_KEY` | `deepseek-chat` |
+| `together` | `https://api.together.xyz/v1` | `PROVIDER_TOGETHER_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` |
+| `mistral` | `https://api.mistral.ai/v1` | `PROVIDER_MISTRAL_KEY` | `mistral-small-latest` |
+
+All of these speak the OpenAI-compatible chat-completions API, so streaming and
+function calling are reused as-is. Set only the keys you need; a provider whose
+key is missing is still listed but marked `(no key)`.
+
+```bash
+npx wrangler secret put PROVIDER_OPENAI_KEY
+npx wrangler secret put PROVIDER_GROQ_KEY
+npx wrangler secret put PROVIDER_DEEPSEEK_KEY
+npx wrangler secret put PROVIDER_TOGETHER_KEY
+npx wrangler secret put PROVIDER_MISTRAL_KEY
+```
+
+`/model` lists models from the currently selected provider's `/models` endpoint
+(cached per provider for one hour). Two features remain **OpenRouter-only**:
+
+- `/credits` reads the OpenRouter `/key` endpoint. On another provider it
+  replies “Quota is only available on OpenRouter — switch with /provider”.
+- The `openrouter:web_search` server tool is only attached when the selected
+  provider is `openrouter`; other providers answer without web search.
 
 ## Agent tools and media
 

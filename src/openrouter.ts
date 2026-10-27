@@ -1,6 +1,5 @@
 import type { Env } from "./telegram";
-
-const BASE = "https://openrouter.ai/api/v1";
+import { DEFAULT_PROVIDER_ID, getProvider, providerKey } from "./providers";
 
 export interface KeyInfo {
   limit: number | null;
@@ -62,22 +61,42 @@ export interface ChatCompletionOptions {
   max_tokens: number;
   tools?: Array<ToolDefinition | ServerTool>;
   stream?: boolean;
+  providerId?: string;
 }
 
-export async function getKeyInfo(env: Env): Promise<KeyInfo> {
-  const res = await fetch(`${BASE}/key`, {
-    headers: { Authorization: `Bearer ${env.OPENROUTER_API_KEY}` },
+export async function getKeyInfo(env: Env, providerId?: string): Promise<KeyInfo> {
+  const provider = getProvider(providerId ?? DEFAULT_PROVIDER_ID);
+  if (provider.id !== DEFAULT_PROVIDER_ID) {
+    throw new Error("Quota is only available on OpenRouter.");
+  }
+  const res = await fetch(`${provider.baseUrl}/key`, {
+    headers: { Authorization: `Bearer ${providerKey(env, provider)}` },
   });
   if (!res.ok) throw new Error(`OpenRouter /key failed: ${res.status}`);
   const body = (await res.json()) as { data: KeyInfo };
   return body.data;
 }
 
-export async function listModels(env: Env): Promise<ModelInfo[]> {
-  const res = await fetch(`${BASE}/models`);
-  if (!res.ok) throw new Error(`OpenRouter /models failed: ${res.status}`);
-  const body = (await res.json()) as { data: ModelInfo[] };
-  return body.data;
+export async function listModels(env: Env, providerId?: string): Promise<ModelInfo[]> {
+  const provider = getProvider(providerId ?? DEFAULT_PROVIDER_ID);
+  const res = await fetch(`${provider.baseUrl}/models`, {
+    headers: { Authorization: `Bearer ${providerKey(env, provider)}` },
+  });
+  if (!res.ok) throw new Error(`${provider.label} /models failed: ${res.status}`);
+  const body = (await res.json()) as { data?: Array<{ id?: string; name?: string }> };
+  if (!Array.isArray(body.data)) {
+    throw new Error(`${provider.label} /models returned an unexpected body.`);
+  }
+  return body.data
+    .filter((model): model is { id: string; name?: string } => typeof model.id === "string")
+    .map((model) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      // Non-OpenRouter /models responses carry no context length or pricing.
+      // Marking them paid keeps the free-first ordering in searchModels stable.
+      context_length: 0,
+      pricing: { prompt: "1", completion: "1" },
+    }));
 }
 
 function isFree(m: ModelInfo): boolean {
@@ -106,10 +125,11 @@ export async function streamChat(
   env: Env,
   opts: ChatCompletionOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const res = await fetch(`${BASE}/chat/completions`, {
+  const provider = getProvider(opts.providerId ?? DEFAULT_PROVIDER_ID);
+  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${providerKey(env, provider)}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -122,7 +142,7 @@ export async function streamChat(
   });
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`OpenRouter chat failed: ${res.status} ${detail.slice(0, 200)}`);
+    throw new Error(`${provider.label} chat failed: ${res.status} ${detail.slice(0, 200)}`);
   }
   return res.body;
 }

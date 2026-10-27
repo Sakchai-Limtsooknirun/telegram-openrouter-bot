@@ -1,5 +1,6 @@
 import type { Env } from "./telegram";
 import type { ChatMessage, ModelInfo } from "./openrouter";
+import { DEFAULT_PROVIDER_ID } from "./providers";
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const HISTORY_LIMIT = 12;
@@ -31,17 +32,33 @@ interface ModelCache {
   models: ModelInfo[];
 }
 
-export async function getSelectedModel(env: Env, chatId: number): Promise<string> {
-  const v = await env.BOT_KV.get(`model:${chatId}`);
-  return v ?? env.DEFAULT_MODEL;
+export async function getStoredModel(env: Env, chatId: number): Promise<string | null> {
+  return await env.BOT_KV.get(`model:${chatId}`);
 }
 
 export async function setSelectedModel(env: Env, chatId: number, modelId: string): Promise<void> {
   await env.BOT_KV.put(`model:${chatId}`, modelId);
 }
 
-export async function getModelCache(env: Env): Promise<ModelInfo[] | null> {
-  const raw = await env.BOT_KV.get("models:cache");
+export async function clearSelectedModel(env: Env, chatId: number): Promise<void> {
+  await env.BOT_KV.delete(`model:${chatId}`);
+}
+
+export async function getSelectedProviderId(env: Env, chatId: number): Promise<string> {
+  const v = await env.BOT_KV.get(`provider:${chatId}`);
+  return v ?? DEFAULT_PROVIDER_ID;
+}
+
+export async function setSelectedProviderId(
+  env: Env,
+  chatId: number,
+  providerId: string,
+): Promise<void> {
+  await env.BOT_KV.put(`provider:${chatId}`, providerId);
+}
+
+export async function getModelCache(env: Env, providerId: string): Promise<ModelInfo[] | null> {
+  const raw = await env.BOT_KV.get(`models:cache:${providerId}`);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as ModelCache;
@@ -52,9 +69,13 @@ export async function getModelCache(env: Env): Promise<ModelInfo[] | null> {
   }
 }
 
-export async function setModelCache(env: Env, models: ModelInfo[]): Promise<void> {
+export async function setModelCache(
+  env: Env,
+  providerId: string,
+  models: ModelInfo[],
+): Promise<void> {
   const payload: ModelCache = { at: Date.now(), models };
-  await env.BOT_KV.put("models:cache", JSON.stringify(payload));
+  await env.BOT_KV.put(`models:cache:${providerId}`, JSON.stringify(payload));
 }
 
 export async function getPendingSearch(env: Env, chatId: number): Promise<boolean> {

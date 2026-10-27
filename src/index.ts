@@ -1,9 +1,17 @@
 import { chunkHtml, editMessageText, sendMessage, type Env, type TgUpdate } from "./telegram";
 import { streamChat, type ChatMessage } from "./openrouter";
-import { appendHistory, getHistory, getSelectedModel, listDueReminders, deleteReminder } from "./state";
+import {
+  appendHistory,
+  getHistory,
+  getSelectedProviderId,
+  getStoredModel,
+  listDueReminders,
+  deleteReminder,
+} from "./state";
 import { toTelegramHtml } from "./format";
 import { handleUpdate } from "./commands";
 import { executeToolCall, isLocalTool, LOCAL_TOOLS, WEB_SEARCH_TOOL } from "./agent-tools";
+import { getProvider, providerDefaultModel } from "./providers";
 
 const MAX_TOKENS = 1024;
 const EDIT_EVERY = 12;
@@ -205,9 +213,10 @@ export async function runChat(
   };
 
   try {
+    const providerId = await getSelectedProviderId(env, chatId);
     const model = imageDataUrl
       ? env.IMAGE_MODEL ?? "google/gemma-4-26b-a4b-it:free"
-      : await getSelectedModel(env, chatId);
+      : (await getStoredModel(env, chatId)) ?? providerDefaultModel(env, getProvider(providerId));
     const imageDisclosure = imageDataUrl ? `Image handled by ${model}.\n\n` : "";
     const history = await getHistory(env, chatId);
     const messages: ChatMessage[] = [
@@ -238,12 +247,13 @@ export async function runChat(
         ? []
         : [
             ...(executions < MAX_LOCAL_TOOL_EXECUTIONS ? LOCAL_TOOLS : []),
-            ...(round === 0 ? [WEB_SEARCH_TOOL] : []),
+            ...(round === 0 && providerId === "openrouter" ? [WEB_SEARCH_TOOL] : []),
           ];
       const body = await streamChat(env, {
         model,
         messages,
         max_tokens: MAX_TOKENS,
+        providerId,
         ...(tools.length ? { tools } : {}),
       });
       const result = await readAssistantStream(body, onStreamContent);
@@ -292,7 +302,7 @@ export async function runChat(
         role: "system",
         content: "Do not call any more tools. Answer using the tool results already provided.",
       });
-      const body = await streamChat(env, { model, messages, max_tokens: MAX_TOKENS });
+      const body = await streamChat(env, { model, messages, max_tokens: MAX_TOKENS, providerId });
       const result = await readAssistantStream(body, onStreamContent);
       acc = result.content;
       for (const citation of result.citations) citations.set(citation.url, citation);

@@ -11,13 +11,17 @@ import {
 import { getKeyInfo, listModels, searchModels, type ModelInfo } from "./openrouter";
 import {
   clearHistory,
+  clearSelectedModel,
   getModelCache,
   getPendingSearch,
-  getSelectedModel,
+  getSelectedProviderId,
+  getStoredModel,
   setModelCache,
   setPendingSearch,
   setSelectedModel,
+  setSelectedProviderId,
 } from "./state";
+import { getProvider, hasProviderKey, providerDefaultModel, PROVIDERS } from "./providers";
 import { runChat } from "./index";
 
 const HELP = [
@@ -25,6 +29,7 @@ const HELP = [
   "/start — show this help",
   "/help — show this help",
   "/credits — remaining OpenRouter quota for this key",
+  "/provider — switch AI provider",
   "/model — pick a model",
   "/cancel — cancel a pending search",
   "/reset — clear conversation context",
@@ -38,37 +43,69 @@ function usd(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
-async function loadModels(env: Env): Promise<ModelInfo[]> {
-  const cached = await getModelCache(env);
+async function loadModels(env: Env, providerId: string): Promise<ModelInfo[]> {
+  const cached = await getModelCache(env, providerId);
   if (cached) return cached;
-  const models = await listModels(env);
-  await setModelCache(env, models);
+  const models = await listModels(env, providerId);
+  await setModelCache(env, providerId, models);
   return models;
 }
 
-function modelKeyboard(models: ModelInfo[], picked: ModelInfo[]): InlineKeyboardMarkup {
+function modelKeyboard(
+  providerId: string,
+  models: ModelInfo[],
+  picked: ModelInfo[],
+): InlineKeyboardMarkup {
   const rows = picked.map((m) => {
     const index = models.findIndex((x) => x.id === m.id);
-    return [{ text: m.name || m.id, callback_data: `m:${index}` }];
+    return [{ text: m.name || m.id, callback_data: `mr:${providerId}:${index}` }];
   });
   rows.push([{ text: "🔍 Search", callback_data: "search" }]);
   return { inline_keyboard: rows };
 }
 
 async function showModels(env: Env, chatId: number, picked?: ModelInfo[]): Promise<void> {
-  const models = await loadModels(env);
+  const providerId = await getSelectedProviderId(env, chatId);
+  const models = await loadModels(env, providerId);
   const list = picked ?? models.slice(0, 8);
   if (list.length === 0) {
     await sendMessage(env, chatId, "No models matched.");
     return;
   }
-  const current = await getSelectedModel(env, chatId);
-  await sendMessage(env, chatId, `Current model: <code>${current}</code>`, modelKeyboard(models, list));
+  const stored = await getStoredModel(env, chatId);
+  const current = stored ?? providerDefaultModel(env, getProvider(providerId));
+  await sendMessage(
+    env,
+    chatId,
+    `Current model: <code>${current}</code>`,
+    modelKeyboard(providerId, models, list),
+  );
+}
+
+function providerKeyboard(env: Env): InlineKeyboardMarkup {
+  const rows = PROVIDERS.map((provider, index) => [
+    {
+      text: hasProviderKey(env, provider) ? provider.label : `${provider.label} (no key)`,
+      callback_data: `pr:${index}`,
+    },
+  ]);
+  return { inline_keyboard: rows };
+}
+
+async function showProviders(env: Env, chatId: number): Promise<void> {
+  const current = await getSelectedProviderId(env, chatId);
+  await sendMessage(
+    env,
+    chatId,
+    `Current provider: <code>${current}</code>`,
+    providerKeyboard(env),
+  );
 }
 
 async function handleCredits(env: Env, chatId: number): Promise<void> {
   try {
-    const info = await getKeyInfo(env);
+    const providerId = await getSelectedProviderId(env, chatId);
+    const info = await getKeyInfo(env, providerId);
     if (info.limit === null) {
       await sendMessage(env, chatId, `unlimited key · Used: ${usd(info.usage)}`);
       return;
@@ -80,7 +117,16 @@ async function handleCredits(env: Env, chatId: number): Promise<void> {
       `Limit: ${usd(info.limit)} · Used: ${usd(info.usage)} · Remaining: ${usd(remaining)}`,
     );
   } catch (err) {
-    await sendMessage(env, chatId, `Could not read quota: ${String(err)}`);
+    const detail = String(err);
+    if (detail.includes("Quota is only available on OpenRouter")) {
+      await sendMessage(
+        env,
+        chatId,
+        "Quota is only available on OpenRouter — switch with /provider",
+      );
+      return;
+    }
+    await sendMessage(env, chatId, `Could not read quota: ${detail}`);
   }
 }
 
@@ -99,15 +145,39 @@ async function handleCallback(env: Env, update: TgUpdate): Promise<void> {
     return;
   }
 
-  if (data.startsWith("m:")) {
-    const index = Number(data.slice(2));
-    const models = await loadModels(env);
+  if (data.startsWith("pr:")) {
+    const index = Number(data.slice(3));
+    const provider = Number.isInteger(index) ? PROVIDERS[index] : undefined;
+    if (!provider) {
+      await answerCallbackQuery(env, cq.id, "Provider list expired, run /provider again.");
+      return;
+    }
+    if (chatId === undefined) return;
+    await setSelectedProviderId(env, chatId, provider.id);
+    await clearSelectedModel(env, chatId);
+    await answerCallbackQuery(env, cq.id, "Provider set");
+    if (messageId !== undefined) {
+      await editMessageText(env, chatId, messageId, `Provider set: <code>${provider.label}</code>`);
+    } else {
+      await sendMessage(env, chatId, `Provider set: <code>${provider.label}</code>`);
+    }
+    return;
+  }
+
+  if (data.startsWith("mr:")) {
+    if (chatId === undefined) return;
+    const [providerId, rawIndex] = data.slice(3).split(":");
+    const index = Number(rawIndex);
+    if (!PROVIDERS.some((provider) => provider.id === providerId)) {
+      await answerCallbackQuery(env, cq.id, "Model list expired, run /model again.");
+      return;
+    }
+    const models = await loadModels(env, providerId);
     const model = Number.isInteger(index) ? models[index] : undefined;
     if (!model) {
       await answerCallbackQuery(env, cq.id, "Model list expired, run /model again.");
       return;
     }
-    if (chatId === undefined) return;
     await setSelectedModel(env, chatId, model.id);
     await answerCallbackQuery(env, cq.id, "Model set");
     if (messageId !== undefined) {
@@ -168,6 +238,9 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
       case "/credits":
         await handleCredits(env, chatId);
         return;
+      case "/provider":
+        await showProviders(env, chatId);
+        return;
       case "/model":
         await showModels(env, chatId);
         return;
@@ -187,13 +260,19 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
 
   if (await getPendingSearch(env, chatId)) {
     await setPendingSearch(env, chatId, false);
-    const models = await loadModels(env);
+    const providerId = await getSelectedProviderId(env, chatId);
+    const models = await loadModels(env, providerId);
     const matches = searchModels(models, text);
     if (matches.length === 0) {
       await sendMessage(env, chatId, "No models matched.");
       return;
     }
-    await sendMessage(env, chatId, `Matches for <code>${text}</code>:`, modelKeyboard(models, matches));
+    await sendMessage(
+      env,
+      chatId,
+      `Matches for <code>${text}</code>:`,
+      modelKeyboard(providerId, models, matches),
+    );
     return;
   }
 
